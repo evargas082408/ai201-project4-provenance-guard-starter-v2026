@@ -50,6 +50,15 @@ TEXTS = {
         "enhance quality of life. It is recommended that adults aim for at least "
         "150 minutes of moderate exercise each week to achieve these benefits."
     ),
+    # ── AI prompted to be ornate — the reverse of signal one's blind spot ────
+    "ornate AI: lighthouse ledger": (
+        "The lighthouse keeper's ledger, its vellum foxed and brittle, "
+        "catalogues a peculiar litany of maritime misfortune. Each entry, "
+        "inscribed in meticulous copperplate, chronicles squalls, foundered "
+        "schooners, and the lamentable fate of the brig Perseverance. Such "
+        "documents illuminate the quotidian vigilance demanded of coastal "
+        "sentinels. They also reveal an unexpected tenderness toward the drowned."
+    ),
     # ── lightly-edited AI ───────────────────────────────────────────────────
     "edited AI: social media": (
         "Social media changed how people talk and share stuff. It's got real "

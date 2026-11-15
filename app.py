@@ -31,6 +31,8 @@ from flask import Flask, jsonify, request
 import audit
 import config
 import detector
+import scoring
+import stylometry
 
 app = Flask(__name__)
 
@@ -218,12 +220,9 @@ def submit():
         return _reject(payload, 503, "detector_unavailable",
                        "The detector model isn't available right now. Try again shortly.")
 
-    # Milestone 3: one real signal. Confidence and label are placeholders
-    # until the second signal and the scoring land in Milestones 4 and 5.
-    style_score = None
-    confidence = None
-    guess = "pending"
-    label = "PLACEHOLDER — label comes in Milestone 5."
+    style_score = stylometry.style_signal(text)
+    confidence = scoring.combine_signals(model_score, style_score)
+    guess, label = scoring.score_to_label(confidence)
 
     audit.log_decision(
         content_id=content_id,

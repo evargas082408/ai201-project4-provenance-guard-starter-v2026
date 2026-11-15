@@ -67,22 +67,35 @@ MAX_REASONING_CHARS = 5_000
 WEIGHT_MODEL_SIGNAL = 0.5
 WEIGHT_STYLE_SIGNAL = 0.5
 
+# The agreement rule (scoring.combine_signals): the high-confidence AI label is
+# only possible when BOTH signals, on their own, are at least this AI-leaning.
+# Calibration: the plain public-domain human passage (Wizard of Oz) scored
+# model 0.71 / style 0.61; every unedited AI paragraph had both signals ≥ 0.80.
+# 0.65 sits between, so plain human writing that fools one signal is held at
+# "unsure" instead of accused.
+AGREEMENT_FLOOR = 0.65
+
 
 # ─── Thresholds (Milestone 5) ────────────────────────────────────────────────
 # Where one label becomes another. Scores run 0.0 (confidently human) to 1.0
 # (confidently AI).
-#
-#   score < HUMAN_THRESHOLD          -> high-confidence human
-#   between the two                  -> unsure
-#   score > AI_THRESHOLD             -> high-confidence AI
 #
 # ⚠️ This is where your false-positive decision from Milestone 1 actually gets
 # made. Widening the unsure band means fewer wrong accusations and more AI text
 # getting through. There is no setting that avoids the trade — only settings
 # that decide who pays for it.
 
-HUMAN_THRESHOLD = 0.35
-AI_THRESHOLD = 0.65
+#   score <  HUMAN_THRESHOLD           -> high-confidence human
+#   HUMAN_THRESHOLD <= score < AI      -> unsure
+#   score >= AI_THRESHOLD              -> high-confidence AI
+#
+# My choice: an unsure band 0.30 wide (0.40–0.70), set above the middle, so
+# the AI label needs a clearly high score AND (via AGREEMENT_FLOOR) both
+# signals behind it. Moved from my Milestone 1 guess of 0.75 after calibration
+# put every unedited AI paragraph at 0.80+ and the agreement rule already
+# guards the plain-writer case.
+HUMAN_THRESHOLD = 0.40
+AI_THRESHOLD = 0.70
 
 # ⚠️ One thing that catches people out in Milestone 5. A weighted average can
 # only land between its two inputs — so while `style_signal` is still the stub
