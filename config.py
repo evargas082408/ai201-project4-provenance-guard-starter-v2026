@@ -53,8 +53,13 @@ DETECTOR_MAX_TOKENS = 400
 # go, and the detector only reads the first 400 tokens anyway. Anything bigger
 # gets a 413 instead of tying the model up.
 MAX_TEXT_CHARS = 20_000
+# Under 10 words the style signal can't measure vocabulary or punctuation and
+# falls back to "no evidence", so a short scrap could be labelled human on
+# signal one alone. Refuse it instead of pretending to judge it.
+MIN_WORDS = 10
 MAX_CREATOR_ID_CHARS = 200
 MAX_REASONING_CHARS = 5_000
+MAX_BODY_BYTES = 200 * 1024   # whole request body; bigger gets a 413 before parsing
 
 
 # ─── Scoring (Milestone 4) ───────────────────────────────────────────────────

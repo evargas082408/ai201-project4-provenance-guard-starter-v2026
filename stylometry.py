@@ -41,8 +41,17 @@ def sentences(text: str) -> list[str]:
 
 
 def words(text: str) -> list[str]:
-    """Split into lowercase words, punctuation stripped. Given to you."""
-    return re.findall(r"[a-z0-9']+", text.lower())
+    """
+    Split into lowercase words, punctuation stripped.
+
+    Changed from the starter's `[a-z0-9']+`, which cut accented words into
+    fragments ("mañana" → "ma", "ana"), split "don’t" at a curly apostrophe,
+    and counted a bare "'" as a word. Fragments look like extra-varied
+    vocabulary, which this signal reads as AI, so non-English names and
+    word-processor quotes were pushing real writers toward an accusation.
+    Now: runs of Unicode letters/digits, joined across an inner ' or ’.
+    """
+    return re.findall(r"[^\W_]+(?:['’][^\W_]+)*", text.lower())
 
 
 # ── The three measures — YOU BUILD THESE ─────────────────────────────────────
@@ -108,7 +117,7 @@ def type_token_ratio(text: str) -> float | None:
 
 # The punctuation that varies most between writers. Full stops and commas are
 # left out on purpose: nearly every writer uses them at similar rates.
-EXPRESSIVE_PUNCTUATION = set(";:!?()—–-\"'…*")
+EXPRESSIVE_PUNCTUATION = set(";:!?()—–-\"'…*’‘“”")
 
 
 def punctuation_density(text: str) -> float | None:
@@ -124,7 +133,9 @@ def punctuation_density(text: str) -> float | None:
     tokens = words(text)
     if len(tokens) < 10:
         return None
-    marks = sum(1 for ch in text if ch in EXPRESSIVE_PUNCTUATION)
+    # "..." and "…" are the same mark typed two ways; count each as one.
+    normalised = re.sub(r"\.{3,}", "…", text)
+    marks = sum(1 for ch in normalised if ch in EXPRESSIVE_PUNCTUATION)
     return round(100.0 * marks / len(tokens), 4)
 
 

@@ -138,3 +138,11 @@ Errors: `400 invalid_json` / `missing_content_id` / `missing_reasoning` /
 `reasoning_too_long`; `404 unknown_content_id` when no decision has that id;
 `409 already_under_review` when the item is already under review (the first
 appeal is kept; the duplicate is refused rather than silently stacked).
+
+> **Changed after the code review (end of unit 7):** `/appeal` also requires
+> `creator_id`, which must match the submission's (a mismatch gets the same
+> 404 as an unknown id). Content ids are public in `/log`, so without this
+> anyone could use up a stranger's one appeal. `/submit` also gained
+> `400 invalid_text` / `invalid_creator_id` (strings that can't be logged
+> safely), `400 creator_id_too_long`, a 10-word minimum (`422`), and a 200 KB
+> body cap (`413`). Every error, including unknown routes, is JSON and logged.

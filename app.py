@@ -24,9 +24,12 @@ Routes:
     GET  /health      is the service up, and is the model loaded
 """
 
+import re
+import threading
 import uuid
 
 from flask import Flask, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 import audit
 import config
@@ -35,6 +38,9 @@ import scoring
 import stylometry
 
 app = Flask(__name__)
+# Refuse oversized bodies before parsing them. 200 KB fits the 20,000-character
+# text cap even if every character arrives \u-escaped; past that is a flood.
+app.config["MAX_CONTENT_LENGTH"] = config.MAX_BODY_BYTES
 
 
 # ── Rate limiting — UNIT 8 ────────────────────────────────────────────────────
@@ -202,10 +208,11 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    payload = request.get_json(silent=True)
+    payload = _payload()
     problem = _check_submission(payload)
     if problem:
         return _reject(payload, *problem)
+    assert isinstance(payload, dict)  # _check_submission guarantees it
 
     text = payload["text"]
     creator_id = payload["creator_id"].strip()
@@ -213,12 +220,23 @@ def submit():
 
     try:
         model_score = detector.model_signal(text)
-    except ValueError:
-        return _reject(payload, 422, "text_too_short",
-                       "That's too short to judge. Send at least a few sentences.")
     except detector.DetectorUnavailable:
         return _reject(payload, 503, "detector_unavailable",
                        "The detector model isn't available right now. Try again shortly.")
+    except ValueError as exc:
+        # detector.perplexity raises ValueError("Text is too short ...") for
+        # under 3 tokens. Any other ValueError is a detector failure, not the
+        # writer's fault, and shouldn't be reported as "too short".
+        if "too short" in str(exc):
+            return _reject(payload, 422, "text_too_short",
+                           "That's too short to judge. Send at least a few sentences.")
+        app.logger.exception("detector failed")
+        return _reject(payload, 503, "detector_error",
+                       "The detector couldn't read this text. Nothing was decided about it.")
+    except Exception:  # noqa: BLE001 — any tokenizer/torch failure is ours, not the writer's
+        app.logger.exception("detector failed")
+        return _reject(payload, 503, "detector_error",
+                       "The detector couldn't read this text. Nothing was decided about it.")
 
     style_score = stylometry.style_signal(text)
     confidence = scoring.combine_signals(model_score, style_score)
@@ -247,7 +265,7 @@ def submit():
         "status": "decided",
         "appeal": (
             "Wrote this yourself and think the label is wrong? Send POST /appeal "
-            "with this content_id and a sentence or two on why."
+            "with this content_id, your creator_id and a sentence or two on why."
         ),
     })
 
@@ -262,36 +280,103 @@ def _check_submission(payload):
     text = payload.get("text")
     if not isinstance(text, str):
         return 400, "missing_text", "'text' is required and must be a string."
+    if not _encodable(text):
+        return 400, "invalid_text", "'text' contains characters that aren't valid Unicode."
     if not text.strip():
         return 400, "empty_text", "'text' is empty. Send the writing you want checked."
     if len(text) > config.MAX_TEXT_CHARS:
         return (413, "text_too_long",
                 f"'text' is {len(text):,} characters; the limit is {config.MAX_TEXT_CHARS:,}.")
+    if len(stylometry.words(text)) < config.MIN_WORDS:
+        # "!!! ??? ..." has characters but no words. Judging it would put a
+        # label on nothing, so it's refused like any other too-short text.
+        return (422, "text_too_short",
+                f"That's too short to judge. Send at least {config.MIN_WORDS} words.")
     creator = payload.get("creator_id")
     if not isinstance(creator, str) or not creator.strip():
         return 400, "missing_creator_id", "'creator_id' is required and must be a non-empty string."
     if len(creator) > config.MAX_CREATOR_ID_CHARS:
-        return (400, "missing_creator_id",
+        return (400, "creator_id_too_long",
                 f"'creator_id' is longer than {config.MAX_CREATOR_ID_CHARS} characters.")
+    if not _encodable(creator) or _UNSAFE_CHARS.search(creator):
+        return 400, "invalid_creator_id", "'creator_id' can't contain control or line-break characters."
     return None
+
+
+# ── Keeping the audit log readable ───────────────────────────────────────────
+# audit.py writes with ensure_ascii=False and reads back with splitlines(),
+# which also splits on U+2028/U+2029/U+0085 and a few control characters. A
+# creator_id carrying one of those can cut an entry in two (hiding it) or
+# smuggle a bare `null` line in (which crashed every later appeal). A lone
+# surrogate can't be written as UTF-8 at all. So nothing user-supplied reaches
+# the log without going through _clean.
+
+_UNSAFE_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f  ]")
+_CONTENT_ID = re.compile(r"[0-9a-f]{32}")
+_appeal_lock = threading.Lock()
+
+
+def _encodable(value: str) -> bool:
+    """False for strings holding lone surrogates, which UTF-8 can't encode."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def _clean(value, limit: int = 200):
+    """A user string made safe to log, or None if it isn't a usable string."""
+    if not isinstance(value, str) or not _encodable(value):
+        return None
+    return _UNSAFE_CHARS.sub(" ", value)[:limit]
+
+
+def _payload():
+    """The JSON body, or None. Deeply nested JSON raises RecursionError, which
+    get_json(silent=True) doesn't catch — treat it as invalid JSON instead."""
+    try:
+        return request.get_json(silent=True)
+    except RecursionError:
+        return None
 
 
 def _reject(payload, status, error, message):
     """Refuse a request, and leave a trace of it in the audit log."""
     body = payload if isinstance(payload, dict) else {}
-    creator = body.get("creator_id")
+    creator = _clean(body.get("creator_id"))
     text = body.get("text")
-    target = body.get("content_id")
     audit.log_rejection(
-        creator_id=creator if isinstance(creator, str) and creator.strip() else "unknown",
+        creator_id=creator if creator and creator.strip() else "unknown",
         reason=error,
         route=request.path,
         http_status=status,
         text_length=len(text) if isinstance(text, str) else None,
         # Not "content_id": a refused appeal must not join that item's history
         # (audit.entries_for), or it would look like part of the decision trail.
-        target_content_id=target[:100] if isinstance(target, str) else None,
+        target_content_id=_clean(body.get("content_id"), limit=100),
     )
+    return jsonify({"error": error, "message": message}), status
+
+
+@app.errorhandler(Exception)
+def _any_error(exc):
+    """
+    Last line of defence: every error leaves JSON and a log line, never an
+    HTML page or a silent gap. Route-specific handlers (the 429 one) still win.
+    """
+    if isinstance(exc, HTTPException):
+        status, error = exc.code or 500, (exc.name or "error").lower().replace(" ", "_")
+        message = exc.description
+    else:
+        app.logger.exception("unhandled error")
+        status, error = 500, "internal_error"
+        message = "Something went wrong on our side. Nothing was decided about this piece."
+    try:
+        audit.log_rejection(creator_id="unknown", reason=error, route=request.path,
+                            http_status=status, exception=type(exc).__name__)
+    except Exception:  # noqa: BLE001 — never let logging turn an error into a crash
+        app.logger.exception("couldn't log the error")
     return jsonify({"error": error, "message": message}), status
 
 
@@ -301,7 +386,12 @@ def appeal():
     A writer says you got it wrong. ← TODO — Milestone 5
 
     Expects JSON:
-        {"content_id": "...", "reasoning": "..."}
+        {"content_id": "...", "creator_id": "...", "reasoning": "..."}
+
+    `creator_id` has to match the one the piece was submitted under, so
+    someone reading /log can't appeal a stranger's piece and use up the one
+    appeal its real writer gets. (Not real authentication — that would need
+    accounts — but it stops the casual version.)
 
     Should:
       1. Check the content_id actually exists — `audit.entries_for(id)` tells
@@ -315,10 +405,10 @@ def appeal():
     to the person on the other end. It's the only thing standing between a
     wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True)
+    payload = _payload()
     if not isinstance(payload, dict):
         return _reject(payload, 400, "invalid_json",
-                       "Send a JSON object with 'content_id' and 'reasoning'.")
+                       "Send a JSON object with 'content_id', 'creator_id' and 'reasoning'.")
 
     content_id = payload.get("content_id")
     if not isinstance(content_id, str) or not content_id.strip():
@@ -326,30 +416,48 @@ def appeal():
                        "'content_id' is required — it came back when the piece was submitted.")
     content_id = content_id.strip()
 
+    creator_id = payload.get("creator_id")
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        return _reject(payload, 400, "missing_creator_id",
+                       "'creator_id' is required — the same one the piece was submitted under.")
+
     reasoning = payload.get("reasoning")
     if not isinstance(reasoning, str) or not reasoning.strip():
         return _reject(payload, 400, "missing_reasoning",
                        "Tell us in a sentence or two why you think the label is wrong.")
+    if not _encodable(reasoning):
+        return _reject(payload, 400, "invalid_reasoning",
+                       "'reasoning' contains characters that aren't valid Unicode.")
     if len(reasoning) > config.MAX_REASONING_CHARS:
         return _reject(payload, 400, "reasoning_too_long",
                        f"Please keep it under {config.MAX_REASONING_CHARS:,} characters.")
 
-    history = audit.entries_for(content_id)
-    decisions = [e for e in history if e.get("status") == "decided" and "event" not in e]
-    if not decisions:
-        return _reject(payload, 404, "unknown_content_id",
-                       f"We have no submission with content_id '{content_id}'. "
-                       f"Check it was copied exactly.")
-    if any(e.get("status") == "under_review" for e in history):
-        return _reject(payload, 409, "already_under_review",
-                       "This piece is already under review. Your first appeal is on record.")
+    not_found = (f"We have no submission with content_id '{_clean(content_id, 100)}' "
+                 f"under that creator_id. Check both were copied exactly.")
+    if not _CONTENT_ID.fullmatch(content_id):
+        return _reject(payload, 404, "unknown_content_id", not_found)
 
-    original = decisions[-1]
-    entry = audit.log_appeal(
-        content_id=content_id,
-        creator_id=original.get("creator_id", "unknown"),
-        reasoning=reasoning.strip(),
-    )
+    # Check-then-write under a lock, so two appeals arriving together can't
+    # both pass the "already under review" check.
+    with _appeal_lock:
+        history = [e for e in audit.read_entries()
+                   if isinstance(e, dict) and e.get("content_id") == content_id]
+        decisions = [e for e in history if e.get("status") == "decided" and "event" not in e]
+        if not decisions:
+            return _reject(payload, 404, "unknown_content_id", not_found)
+        original = decisions[-1]
+        if original.get("creator_id") != creator_id.strip():
+            # Same answer as an unknown id, so this can't be used to probe ids.
+            return _reject(payload, 404, "unknown_content_id", not_found)
+        if any(e.get("status") == "under_review" for e in history):
+            return _reject(payload, 409, "already_under_review",
+                           "This piece is already under review. Your first appeal is on record.")
+
+        entry = audit.log_appeal(
+            content_id=content_id,
+            creator_id=original.get("creator_id", "unknown"),
+            reasoning=_clean(reasoning.strip(), limit=config.MAX_REASONING_CHARS) or "",
+        )
 
     return jsonify({
         "content_id": content_id,

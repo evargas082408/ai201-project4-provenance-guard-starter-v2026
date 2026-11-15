@@ -16,6 +16,8 @@ function holding your combining rule. The grader checks your code against what
 you claim, so that line should read `scoring.py::combine_signals`.
 """
 
+import math
+
 import config
 
 
@@ -62,8 +64,12 @@ def combine_signals(model_score: float, style_score: float) -> float:
     #      methods disagreeing is uncertainty, and uncertainty must never come
     #      out as "this is AI". The cap only works in the accusing direction —
     #      being wrongly called human is the cheap mistake, so no cap there.
-    model_score = min(max(float(model_score), 0.0), 1.0)
-    style_score = min(max(float(style_score), 0.0), 1.0)
+    # A NaN would slip past both the clamp and the cap below (every
+    # comparison with NaN is False) and come out as invalid JSON. Treat any
+    # non-finite signal as "no evidence": 0.5, which can never clear the
+    # agreement floor, so it can never help produce an accusation.
+    model_score = _finite_or_neutral(model_score)
+    style_score = _finite_or_neutral(style_score)
 
     combined = (
         config.WEIGHT_MODEL_SIGNAL * model_score
@@ -74,6 +80,16 @@ def combine_signals(model_score: float, style_score: float) -> float:
         combined = min(combined, config.AI_THRESHOLD - 0.01)
 
     return round(combined, 4)
+
+
+def _finite_or_neutral(value) -> float:
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return 0.5
+    if not math.isfinite(value):
+        return 0.5
+    return min(max(value, 0.0), 1.0)
 
 
 def score_to_label(score: float) -> tuple[str, str]:
