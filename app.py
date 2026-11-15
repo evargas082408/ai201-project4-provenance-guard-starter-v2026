@@ -245,6 +245,10 @@ def submit():
         "model_score": model_score,
         "style_score": style_score,
         "status": "decided",
+        "appeal": (
+            "Wrote this yourself and think the label is wrong? Send POST /appeal "
+            "with this content_id and a sentence or two on why."
+        ),
     })
 
 
@@ -274,14 +278,19 @@ def _check_submission(payload):
 
 def _reject(payload, status, error, message):
     """Refuse a request, and leave a trace of it in the audit log."""
-    creator = payload.get("creator_id") if isinstance(payload, dict) else None
-    text = payload.get("text") if isinstance(payload, dict) else None
+    body = payload if isinstance(payload, dict) else {}
+    creator = body.get("creator_id")
+    text = body.get("text")
+    target = body.get("content_id")
     audit.log_rejection(
         creator_id=creator if isinstance(creator, str) and creator.strip() else "unknown",
         reason=error,
         route=request.path,
         http_status=status,
         text_length=len(text) if isinstance(text, str) else None,
+        # Not "content_id": a refused appeal must not join that item's history
+        # (audit.entries_for), or it would look like part of the decision trail.
+        target_content_id=target[:100] if isinstance(target, str) else None,
     )
     return jsonify({"error": error, "message": message}), status
 
@@ -306,14 +315,57 @@ def appeal():
     to the person on the other end. It's the only thing standing between a
     wrong accusation and nothing at all.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return _reject(payload, 400, "invalid_json",
+                       "Send a JSON object with 'content_id' and 'reasoning'.")
 
-    # TODO: delete this and build the route.
+    content_id = payload.get("content_id")
+    if not isinstance(content_id, str) or not content_id.strip():
+        return _reject(payload, 400, "missing_content_id",
+                       "'content_id' is required — it came back when the piece was submitted.")
+    content_id = content_id.strip()
+
+    reasoning = payload.get("reasoning")
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return _reject(payload, 400, "missing_reasoning",
+                       "Tell us in a sentence or two why you think the label is wrong.")
+    if len(reasoning) > config.MAX_REASONING_CHARS:
+        return _reject(payload, 400, "reasoning_too_long",
+                       f"Please keep it under {config.MAX_REASONING_CHARS:,} characters.")
+
+    history = audit.entries_for(content_id)
+    decisions = [e for e in history if e.get("status") == "decided" and "event" not in e]
+    if not decisions:
+        return _reject(payload, 404, "unknown_content_id",
+                       f"We have no submission with content_id '{content_id}'. "
+                       f"Check it was copied exactly.")
+    if any(e.get("status") == "under_review" for e in history):
+        return _reject(payload, 409, "already_under_review",
+                       "This piece is already under review. Your first appeal is on record.")
+
+    original = decisions[-1]
+    entry = audit.log_appeal(
+        content_id=content_id,
+        creator_id=original.get("creator_id", "unknown"),
+        reasoning=reasoning.strip(),
+    )
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "content_id": content_id,
+        "status": "under_review",
+        "message": (
+            "Thanks — your appeal is recorded and this piece is now under review. "
+            "A person will look at it; until then the label is marked as disputed."
+        ),
+        "appealed_at": entry["timestamp"],
+        "original": {
+            "guess": original.get("guess"),
+            "confidence": original.get("combined_score"),
+            "label": original.get("label"),
+            "decided_at": original.get("timestamp"),
+        },
+    })
 
 
 # ── Already works ─────────────────────────────────────────────────────────────

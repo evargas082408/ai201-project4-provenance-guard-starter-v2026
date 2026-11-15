@@ -102,12 +102,36 @@ def score_to_label(score: float) -> tuple[str, str]:
     think if they got it on their own work. That question is the whole
     milestone.
     """
-    # TODO: replace this — thresholds are in config.py
+    # Half-open bands, so every score lands in exactly one:
+    #   [0, HUMAN)  human  ·  [HUMAN, AI)  unsure  ·  [AI, 1]  ai
     if score >= config.AI_THRESHOLD:
-        return "ai", "PLACEHOLDER — write the high-confidence AI label."
-    if score <= config.HUMAN_THRESHOLD:
-        return "human", "PLACEHOLDER — write the high-confidence human label."
-    return "unsure", "PLACEHOLDER — write the unsure label."
+        return "ai", LABEL_AI
+    if score < config.HUMAN_THRESHOLD:
+        return "human", LABEL_HUMAN
+    return "unsure", LABEL_UNSURE
+
+
+# The exact text a reader sees. Written for someone who has never heard the
+# word "threshold" — and, for the unsure and AI ones, for the writer who may
+# well have written every word.
+
+LABEL_HUMAN = (
+    "We think a person wrote this. Our automated check found the kind of "
+    "variety we usually see in human writing."
+)
+
+LABEL_UNSURE = (
+    "Our check couldn't tell whether this was written by a person or with AI "
+    "help. That happens often, especially with clear, plain writing, and it "
+    "isn't a judgment about the writer. Nothing happens to this piece because "
+    "of this result."
+)
+
+LABEL_AI = (
+    "Our check found strong signs that this may have been written with AI. "
+    "Automated checks can be wrong, so this is not proof. If you wrote this "
+    "yourself, you can ask for a review and a person will look at it."
+)
 
 
 def label_ranges() -> list[tuple[str, str]]:
@@ -116,7 +140,21 @@ def label_ranges() -> list[tuple[str, str]]:
     label text — given to you so the numbers can't drift apart from config.py.
     """
     return [
-        ("high-confidence human", f"0.00 – {config.HUMAN_THRESHOLD:.2f}"),
-        ("unsure", f"{config.HUMAN_THRESHOLD:.2f} – {config.AI_THRESHOLD:.2f}"),
+        ("high-confidence human", f"0.00 – under {config.HUMAN_THRESHOLD:.2f}"),
+        ("unsure", f"{config.HUMAN_THRESHOLD:.2f} – under {config.AI_THRESHOLD:.2f}"),
         ("high-confidence AI", f"{config.AI_THRESHOLD:.2f} – 1.00"),
     ]
+
+
+if __name__ == "__main__":
+    # Print the bands, and prove every score from 0.00 to 1.00 gets a label
+    # (criterion 3b).
+    for name, band in label_ranges():
+        print(f"{name:24} {band}")
+    seen = {}
+    for i in range(101):
+        guess, _ = score_to_label(i / 100)
+        seen.setdefault(guess, []).append(i / 100)
+    for guess, scores in seen.items():
+        print(f"{guess:8} {len(scores):3} scores  {scores[0]:.2f} … {scores[-1]:.2f}")
+    print(f"total    {sum(len(s) for s in seen.values())} of 101 mapped")
