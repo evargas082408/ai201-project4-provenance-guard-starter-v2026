@@ -30,6 +30,7 @@ from flask import Flask, jsonify, request
 
 import audit
 import config
+import detector
 
 app = Flask(__name__)
 
@@ -199,17 +200,91 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    payload = request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True)
+    problem = _check_submission(payload)
+    if problem:
+        return _reject(payload, *problem)
 
-    # TODO: delete this and build the route.
+    text = payload["text"]
+    creator_id = payload["creator_id"].strip()
+    content_id = uuid.uuid4().hex
+
+    try:
+        model_score = detector.model_signal(text)
+    except ValueError:
+        return _reject(payload, 422, "text_too_short",
+                       "That's too short to judge. Send at least a few sentences.")
+    except detector.DetectorUnavailable:
+        return _reject(payload, 503, "detector_unavailable",
+                       "The detector model isn't available right now. Try again shortly.")
+
+    # Milestone 3: one real signal. Confidence and label are placeholders
+    # until the second signal and the scoring land in Milestones 4 and 5.
+    style_score = None
+    confidence = None
+    guess = "pending"
+    label = "PLACEHOLDER — label comes in Milestone 5."
+
+    audit.log_decision(
+        content_id=content_id,
+        creator_id=creator_id,
+        guess=guess,
+        model_score=model_score,
+        style_score=style_score,
+        combined_score=confidence,
+        label=label,
+        status="decided",
+        text_length=len(text),
+    )
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /submit isn't built yet — see the TODO in app.py.",
-        "you_sent": {
-            "text_length": len(payload.get("text", "")),
-            "creator_id": payload.get("creator_id"),
-        },
-    }), 501
+        "content_id": content_id,
+        "creator_id": creator_id,
+        "guess": guess,
+        "confidence": confidence,
+        "label": label,
+        "model_score": model_score,
+        "style_score": style_score,
+        "status": "decided",
+    })
+
+
+def _check_submission(payload):
+    """
+    Return (http_status, error_code, message) for a body /submit can't take,
+    or None when it's fine. Runs before any model is touched.
+    """
+    if not isinstance(payload, dict):
+        return 400, "invalid_json", "Send a JSON object with 'text' and 'creator_id'."
+    text = payload.get("text")
+    if not isinstance(text, str):
+        return 400, "missing_text", "'text' is required and must be a string."
+    if not text.strip():
+        return 400, "empty_text", "'text' is empty. Send the writing you want checked."
+    if len(text) > config.MAX_TEXT_CHARS:
+        return (413, "text_too_long",
+                f"'text' is {len(text):,} characters; the limit is {config.MAX_TEXT_CHARS:,}.")
+    creator = payload.get("creator_id")
+    if not isinstance(creator, str) or not creator.strip():
+        return 400, "missing_creator_id", "'creator_id' is required and must be a non-empty string."
+    if len(creator) > config.MAX_CREATOR_ID_CHARS:
+        return (400, "missing_creator_id",
+                f"'creator_id' is longer than {config.MAX_CREATOR_ID_CHARS} characters.")
+    return None
+
+
+def _reject(payload, status, error, message):
+    """Refuse a request, and leave a trace of it in the audit log."""
+    creator = payload.get("creator_id") if isinstance(payload, dict) else None
+    text = payload.get("text") if isinstance(payload, dict) else None
+    audit.log_rejection(
+        creator_id=creator if isinstance(creator, str) and creator.strip() else "unknown",
+        reason=error,
+        route=request.path,
+        http_status=status,
+        text_length=len(text) if isinstance(text, str) else None,
+    )
+    return jsonify({"error": error, "message": message}), status
 
 
 @app.post("/appeal")

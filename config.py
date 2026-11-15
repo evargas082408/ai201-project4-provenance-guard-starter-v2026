@@ -47,6 +47,16 @@ DETECTOR_MODEL = os.getenv("AI201_DETECTOR_MODEL", "gpt2")
 DETECTOR_MAX_TOKENS = 400
 
 
+# ─── Input limits ────────────────────────────────────────────────────────────
+# The longest submission /submit accepts. 20,000 characters is roughly 3,500
+# words — longer than any poem or short story a writing site would check in one
+# go, and the detector only reads the first 400 tokens anyway. Anything bigger
+# gets a 413 instead of tying the model up.
+MAX_TEXT_CHARS = 20_000
+MAX_CREATOR_ID_CHARS = 200
+MAX_REASONING_CHARS = 5_000
+
+
 # ─── Scoring (Milestone 4) ───────────────────────────────────────────────────
 # How much each signal counts toward the combined score.
 #

@@ -1,0 +1,2 @@
+{"timestamp": "2026-11-15T21:35:36+00:00", "content_id": "643d3b6c64d24630a595e6dfb0c3c189", "creator_id": "eduardo", "guess": "pending", "model_score": 0.5752, "style_score": null, "combined_score": null, "label": "PLACEHOLDER — label comes in Milestone 5.", "status": "decided", "text_length": 185}
+{"timestamp": "2026-11-15T21:35:36+00:00", "creator_id": "eduardo", "event": "rejected", "status": "rejected", "reason": "missing_text", "route": "/submit", "http_status": 400, "text_length": null}
