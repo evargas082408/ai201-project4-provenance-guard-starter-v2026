@@ -398,9 +398,11 @@ re-probed against the running service:
   appeal check-then-write is under a lock; anything under 10 words is refused
   instead of being judged on signal one alone.
 
-**Still mine to do:** criterion 1 is about *my own* writing. None of the text
-above is mine (the human samples are public-domain books), so before unit 8
-I need to put ten pieces I actually wrote into `scenarios.py`.
+**Criterion 1 samples:** `scenarios.py` now has ten pieces from my original
+chat messages, drafts, and notes, each 80–300 words. Codex retrieved those
+excerpts without rewriting them. Their sources and an overlap between two
+reflections are recorded in [writing-sources.md](writing-sources.md).
+The three evaluation trials still need to be run in unit 8.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 

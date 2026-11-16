@@ -44,9 +44,9 @@ Two things worth knowing before you pick numbers:
 ---
 ## 1. My writing shouldn't get called AI
 
-Of **10 pieces I actually wrote myself** (Discord messages, AI201 discussion
-posts, a devlog for one of my Roblox games, a Shorts script I wrote by hand,
-notes from my robot-arm build; 80–300 words each, no tool touched them),
+Of **10 pieces I actually wrote myself** (original chat messages, essay
+drafts, class reflections, programming explanations, and robotics notes;
+80–300 words each, with no AI rewriting in the test samples),
 **0 get the high-confidence AI label** and **at least 6 of 10 get the
 high-confidence human label**. Both have to hold in **every one** of the
 three trials.
