@@ -195,7 +195,13 @@ def style_signal(text: str) -> float:
 STYLE_ANCHORS = {
     "spread": (0.20, 0.70),
     "ttr": (0.93, 0.75),
-    "punct": (0.5, 6.0),
+    # UNIT 8 IMPROVEMENT (was (0.5, 6.0)). Absence of expressive punctuation
+    # isn't evidence of AI: unedited AI paragraphs had none, and neither did
+    # plain human writing (FP02-04, my sample 3), so "none" used to score 1.0
+    # and made signal two copy signal one's plain-writing blind spot. An AI
+    # anchor of -6.0 is unreachable on purpose: it puts "none" at 0.5 (no
+    # evidence either way) and lets punctuation only ever pull toward human.
+    "punct": (-6.0, 6.0),
 }
 
 # Sentence rhythm counts most: it is the measure the brief's reasoning rests
