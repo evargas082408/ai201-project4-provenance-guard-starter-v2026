@@ -338,8 +338,11 @@ request: the Milestone 1 trace, the five criteria, both routes, the style
 signal, the combining rule, the labels, and this write-up. That includes the
 criteria, which the brief says to write yourself; I'm saying so here rather
 than hiding it. It worked milestone by milestone and committed after each one,
-and the criteria commit comes before any scoring code ran. Two moments where
-what came back changed the build:
+and the criteria commit comes before any scoring code ran. Afterwards I had it
+rewrite the criteria in my own voice, around the writing I actually do
+(Discord, class posts, game devlogs, Shorts scripts). Every target number is
+the same as in that first criteria commit. Two moments where what came back
+changed the build:
 
 **Moment 1: the vocabulary measure ran backwards**
 
