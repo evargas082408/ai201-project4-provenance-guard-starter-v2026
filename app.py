@@ -85,7 +85,9 @@ if config.RATE_LIMITING_ENABLED:
         matters: one script can look like a thousand callers, and one household
         can look like one.
         """
-        payload = request.get_json(silent=True)
+        # _payload, not request.get_json: deeply nested JSON raises
+        # RecursionError, and here that would crash before the route runs.
+        payload = _payload()
         # A body that parses as JSON but isn't an object — a bare list or
         # string — has no .get. Without this guard the key function raises
         # BEFORE the route runs, and a malformed request becomes a 500 that
@@ -109,12 +111,16 @@ if config.RATE_LIMITING_ENABLED:
 
         ⚠️ An attack that shows up only as an absence is one you'll never find.
         """
-        payload = request.get_json(silent=True)
+        payload = _payload()
         if not isinstance(payload, dict):
             payload = {}
+        # _clean: a creator_id is attacker-controlled, and a lone surrogate or
+        # U+2028 in it would crash this handler or split the log line.
         audit.log_rejection(
-            creator_id=payload.get("creator_id", "unknown"),
+            creator_id=_clean(payload.get("creator_id")) or "unknown",
             reason="rate_limited",
+            route=request.path,
+            http_status=429,
             limit=str(exc.description),
         )
         return jsonify({
@@ -160,7 +166,7 @@ def health():
 # ── YOU BUILD THIS ────────────────────────────────────────────────────────────
 
 @app.post("/submit")
-# @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
+@limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
 def submit():
     """
     Take a piece of text, decide about it, log the decision, answer.
