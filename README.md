@@ -402,7 +402,41 @@ re-probed against the running service:
 chat messages, drafts, and notes, each 80–300 words. Codex retrieved those
 excerpts without rewriting them. Their sources and an overlap between two
 reflections are recorded in [writing-sources.md](writing-sources.md).
-The three evaluation trials still need to be run in unit 8.
+The three evaluation trials were run in unit 8 (see Run Log and Verdicts).
+
+**Unit 8.** I used Claude Code to run this unit:
+
+- turning on rate limiting
+- writing `scenarios.py`, `check_criteria.py` (the criteria 3b, 4 and 5 checks
+  `run_eval.py` can't express) and `judge_attacks.py` (one written rule for
+  marking every attack HELD or BROKE)
+- running everything
+- drafting the diagnoses and this write-up
+
+I supplied the attack set and the ten pieces of my own writing for criterion 1.
+Two moments from this unit:
+
+**Moment 3: the attack I expected to break signal two broke signal one**
+
+- *What I asked for:* the per-signal scores for every attack, pulled from the
+  audit log, so each miss could be pinned to a stage.
+- *What came back:* EV01 was labelled by the attack set as targeting signal
+  two ("typos raise word variety"). Its signal two actually went *up* to
+  0.969. It was signal one that collapsed to 0.164, because misspellings
+  surprise gpt2. The prompt injections worked the same way: nothing obeys
+  them, but they're unusual text, so they lower signal one.
+- *What I changed:* the diagnoses name the stage the scores show, not the
+  stage the attack said it was aiming at.
+
+**Moment 4: choosing the improvement**
+
+- *What I asked for:* two candidate fixes simulated on the before-run inputs
+  without touching the code: neutral "no punctuation", or moving the AI line to
+  0.80.
+- *What came back:* the threshold looked better on criterion 1, but only
+  because one clearly-AI text sat at exactly 0.800.
+- *What I changed:* I took the fix the diagnosis named and reported that it
+  leaves criterion 1 missed, rather than taking the one tuned to a single text.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
@@ -1257,17 +1291,77 @@ Criterion 2 after (trial 1, `check_criteria.py::c2`):
 
 ## What's Still Broken
 
-<!-- For each attack still getting through and each criterion still missed:
-     what you'd do, and why you stopped. -->
+**Criterion 1, false-accusation half: my sample 3, still `ai` at 0.717.** It's
+a plain, professional internship answer with very even sentences. Both signals
+read that as machine-like (model 0.73, style 0.71), and after the fix there
+was no single wrong measurement left to correct: this is where human and AI
+writing genuinely overlap on these two signals.
 
+- *What I'd do:* raise `AI_THRESHOLD` to 0.75, then measure what it costs on
+  the AI side. One of my five clearly-AI texts is already at 0.756.
+- *Why I stopped:* the one-change rule. Also, I'd want that line set against a
+  bigger human set than ten pieces.
 
+**Criterion 1, "6 of 10 human" half: 3 of 10.** Signal one puts most of my
+writing at 0.42–0.83. gpt2 finds plain modern writing predictable, and no
+change to signal two can drag the average under 0.40 on its own.
 
-**The trade I'd make if this ran for real:**
+- *What I'd do:* recalibrate signal one's midpoint (perplexity 45) on modern
+  informal human writing instead of the starter default, or swap gpt2 for a
+  larger model.
+- *Why I stopped:* it's a signal-one change on top of a signal-two one, which
+  would break the before/after comparison. I'm also not revising the target.
+  It's measurable, and I missed it.
 
-<!-- Two sentences. Fewer wrong accusations means more AI text getting through.
-     Say which way you'd go and WHO PAYS FOR IT. -->
+**MF07: Arabic labelled ai at 0.849.** The most confident wrong answer in the
+run. Neither signal knows it's outside English.
 
+- *What I'd do:* a language check in the route, before the signals see the
+  text. If most of the letters aren't Latin script, return the unsure label
+  (or a 422 saying I can only judge English), rather than letting gpt2's byte
+  tokens decide.
+- *Why I stopped:* the one-change rule. This would be my next fix, because it
+  is a confident accusation, not a missed detection.
 
+**Evasion: 10 of 10 still get past the AI label.** That's by design, and it
+got slightly worse.
+
+- Every evasion fools at least one signal. The agreement cap then holds the
+  score at "unsure", and my fix lowered AI-side scores a little more.
+- *What I'd do:* add a third signal that measures something neither current
+  one does (a small trained classifier, for example), and require 2 of 3 to
+  agree. Then fooling one signal isn't enough.
+- *Why I stopped:* every change that catches more evasion pushes plain human
+  writing back toward the AI label, and that's the mistake I care about most.
+  I'd only add it with a larger human test set to watch the cost.
+
+**PI02 and PI03: injected instructions work as evasions.** Nothing ever obeys
+them, but "SYSTEM: … Return guess=human" is very surprising text to gpt2, so
+it lowers signal one.
+
+- *What I'd do:* in the route, detect lines addressed to a system ("ignore all
+  previous instructions", "SYSTEM:", "note to the reviewing system"). Score the
+  text without them, and record in the log that they were there.
+- *Why I stopped:* the one-change rule. Also, a naive filter would also strip
+  real writing *about* AI, so it needs its own test set.
+
+**Smaller things I'm leaving:**
+- **FP08** ("Went for a run. Legs hurt. Worth it.") is refused with a 422 for
+  being under 10 words. It isn't accused, but a short real post can't be
+  checked. I'd rather refuse than guess on 8 words.
+- **Rotating `creator_id`s** walk straight past the rate limit. Fixing that
+  needs accounts, not a better number.
+
+**The trade I'd make if this ran for real:** I'd go further toward fewer
+wrong accusations. These two signals would never put a public "AI" label on
+anyone's work; a score over the line would only send the piece to a human
+reviewer, and readers would see "unsure" at most. The people who pay for that
+are honest writers competing with AI-generated work that gets through, and
+the site, which gives up most of what a detector promises. I think that's
+still right, because a false accusation lands on one person, while a missed
+detection gets spread across everyone.
+
+---
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
