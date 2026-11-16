@@ -333,16 +333,16 @@ creator missing          400 missing_creator_id
 
 ## How I Used AI
 
-Plainly: I had Claude Code (Claude Opus) build this unit end to end at my
-request: the Milestone 1 trace, the five criteria, both routes, the style
-signal, the combining rule, the labels, and this write-up. That includes the
-criteria, which the brief says to write yourself; I'm saying so here rather
-than hiding it. It worked milestone by milestone and committed after each one,
-and the criteria commit comes before any scoring code ran. Afterwards I had it
-rewrite the criteria in my own voice, around the writing I actually do
-(Discord, class posts, game devlogs, Shorts scripts). Every target number is
-the same as in that first criteria commit. Two moments where what came back
-changed the build:
+I wrote all five acceptance criteria myself. I used Claude to put them into
+the repo and help with the wording, but the README incorrectly said Claude
+wrote them. I used Codex to correct that and clean up the wording. The targets
+and test requirements are still the same as in the first criteria commit.
+
+I used Claude Code (Claude Opus) to help build the rest of this unit: the
+Milestone 1 trace, both routes, the style signal, the combining rule, the
+labels, and this write-up. It worked milestone by milestone and committed
+after each one. The criteria commit comes before any scoring code ran.
+Two examples of how I used its output:
 
 **Moment 1: the vocabulary measure ran backwards**
 

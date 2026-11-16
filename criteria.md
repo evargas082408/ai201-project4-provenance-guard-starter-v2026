@@ -42,7 +42,7 @@ Two things worth knowing before you pick numbers:
   a **miss**.
 
 ---
-## 1. My own writing never gets called AI
+## 1. My writing shouldn't get called AI
 
 Of **10 pieces I actually wrote myself** (Discord messages, AI201 discussion
 posts, a devlog for one of my Roblox games, a Shorts script I wrote by hand,
@@ -51,15 +51,13 @@ notes from my robot-arm build; 80–300 words each, no tool touched them),
 high-confidence human label**. Both have to hold in **every one** of the
 three trials.
 
-**Why this target:** I post stuff online. If a site slapped "AI-generated" on
-something I wrote, I wouldn't bother appealing, I'd just leave and not come
-back. That's the whole reason this project exists, so the number is zero, not
-"1 in 10". The 6-of-10 half is there so I can't cheat by calling everything
-"unsure". Getting "unsure" on your own work still kind of stings.
+**Why this target:** If I wrote something myself, I don't want it getting
+called AI. That's why I picked zero false positives. At least 6 of 10 also
+need to get the human label so it can't pass by calling everything unsure.
 
 ---
 
-## 2. Obvious AI and obvious human text land far apart
+## 2. AI and human writing should get different scores
 
 For **5 clearly-AI texts** (straight out of a chatbot from a plain prompt, no
 edits) and **5 clearly-human texts** (published human writing from before
@@ -67,14 +65,14 @@ edits) and **5 clearly-human texts** (published human writing from before
 the human set's, and **at least 4 of the 5 AI texts score above every one of
 the 5 human texts**. Both in each of the three trials.
 
-**Why this target:** if my detector can't split the easy ones, I've got no
-business trusting it on the hard ones. 0.30 is exactly how wide my unsure band
-is, so with any less, the obvious AI and the obvious human stuff could both
-end up stuck in the middle, which is the same as not working.
+**Why this target:** I want to check whether it can tell the easier examples
+apart before trusting it with anything harder. I picked 0.30 because that's
+the width of the unsure band. I also want most AI examples to score above
+every human example, so one high score can't carry the average.
 
 ---
 
-## 3. Every label can actually show up, and every score gets one
+## 3. All three labels should work
 
 (a) In a **9-text coverage set** (3 I'd bet are AI, 3 I'd bet are human, 3 I
 honestly can't call), **each of the three labels (`ai`, `human`, `unsure`)
@@ -83,15 +81,13 @@ shows up at least once** in each trial.
 through `scoring.score_to_label` gives back **one of the three guesses for all
 101**, with no exception and no gap.
 
-**Why this target:** it's like a game with a level nobody can reach. If a
-label never comes out, I wrote it and never tested it. Part (b) is about the
-edges: one wrong `<` vs `<=` at a threshold and a score falls through the
-crack with no label at all. I'd rather catch that with a loop than with a
-confused user.
+**Why this target:** Having three labels doesn't mean much if the system
+only ever uses two. I also want to check every score in 0.01 steps so a
+mistake at a cutoff doesn't leave a score without a label.
 
 ---
 
-## 4. Appeals always go through, and always leave a record
+## 4. Valid appeals should work and get saved
 
 For **10 appeals against real `content_id`s** (sent with the matching
 `creator_id`), **10 of 10** return HTTP 200 with `status: "under_review"`, and
@@ -101,15 +97,14 @@ timestamped no earlier than the decision. For **3 appeals with made-up
 `content_id`s**, **3 of 3 return 404** and **0** `under_review` entries get
 added for them.
 
-**Why this target:** the appeal is the only thing a wrongly-flagged person
-has. "Works most of the time" isn't good enough when it's the one button they
-get, so it's 10 of 10. The fake-id half matters because telling someone "got
-it, we're reviewing it" when nothing actually got saved is worse than just
-showing an error.
+**Why this target:** If the system gets someone's writing wrong, they need
+to be able to appeal it. All 10 valid appeals should work and leave a record
+of what happened. A made-up ID should get an error instead of saying an
+appeal went through when there's nothing to review.
 
 ---
 
-## 5. Garbage in doesn't crash it, and always leaves a trace
+## 5. Bad requests shouldn't crash the service
 
 For **9 malformed requests** (`text` missing, `text` empty, `text` only
 whitespace, `text` null, `text` a number, a body that's a JSON list,
@@ -118,11 +113,10 @@ words), **0 return a 5xx**, **9 of 9 return a 4xx with a JSON body that has an
 `error` field**, **9 of 9 add exactly one `rejected` entry** to the audit log,
 and `POST /ping` still answers afterwards.
 
-**Why this target:** anyone who's played a game on launch day knows the first
-thing people do is throw weird stuff at it. A 500 tells the writer nothing
-about what to fix, and next unit somebody is literally attacking this thing,
-so every refusal has to land in the log. An attack that only shows up as
-missing data is one I'd never find.
+**Why this target:** People will send empty text, the wrong type of data,
+or way too much text. I want those requests to get an error without crashing
+the service. All 9 need to show up in the log so I can see what was rejected
+when I test attacks in unit 8.
 
 ---
 
